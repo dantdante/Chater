@@ -1,82 +1,28 @@
-import socket
-import threading
+# server.py
 import os
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import uvicorn
 
-# -------------------------------
-# CONFIG
-# -------------------------------
-# listen on all interfaces
-HOST = "0.0.0.0"
-# use Render's PORT if it exists, otherwise default to 5555 for local testing
-PORT = int(os.environ.get("PORT", 5555))
-
-# -------------------------------
-# SERVER SETUP
-# -------------------------------
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind((HOST, PORT))
-server.listen()
-
+app = FastAPI()
 clients = []
-usernames = []
 
-print(f"Server running on {HOST}:{PORT}")
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    clients.append(websocket)
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            for client in clients:
+                if client != websocket:
+                    await client.send_text(msg)
+    except WebSocketDisconnect:
+        clients.remove(websocket)
 
-# -------------------------------
-# BROADCAST FUNCTION
-# -------------------------------
-def broadcast(message):
-    for client in clients:
-        try:
-            client.send(message)
-        except:
-            # remove client if sending fails
-            if client in clients:
-                index = clients.index(client)
-                clients.remove(client)
-                usernames.pop(index)
+@app.get("/")
+async def root():
+    return {"status": "Chater WebSocket Server Running"}
 
-# -------------------------------
-# HANDLE SINGLE CLIENT
-# -------------------------------
-def handle(client):
-    while True:
-        try:
-            msg = client.recv(1024)
-            broadcast(msg)
-        except:
-            if client in clients:
-                index = clients.index(client)
-                username = usernames[index]
-                clients.remove(client)
-                usernames.pop(index)
-                broadcast(f"{username} has left the chat.".encode())
-            client.close()
-            break
-
-# -------------------------------
-# ACCEPT CONNECTIONS
-# -------------------------------
-def receive_connections():
-    while True:
-        client, addr = server.accept()
-        print(f"{addr} connected")
-
-        # request username from client
-        client.send("USERNAME".encode())
-        username = client.recv(1024).decode()
-
-        usernames.append(username)
-        clients.append(client)
-
-        broadcast(f"{username} joined the chat!".encode())
-        client.send("Connected to the server!".encode())
-
-        # start thread to handle this client
-        thread = threading.Thread(target=handle, args=(client,))
-        thread.start()
-
-# -------------------------------
-# START SERVER
-# -------------------------------
-receive_connections()
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5555))  # Render sets $PORT, fallback to 5555 for local
+    uvicorn.run("server:app", host="0.0.0.0", port=port, log_level="info")
