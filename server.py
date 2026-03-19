@@ -1,7 +1,7 @@
 # server.py
 import os
-import asyncio
 import websockets
+import asyncio
 
 clients = set()
 
@@ -21,9 +21,6 @@ async def handler(websocket, path):
 port = int(os.environ.get("PORT", 5555))
 print(f"Chater WebSocket Server running on port {port}")
 
-# use asyncio.run instead of get_event_loop()
+# expose a "main" coroutine for uvicorn instead of asyncio.run()
 async def main():
-    async with websockets.serve(handler, "0.0.0.0", port):
-        await asyncio.Future()  # run forever
-
-asyncio.run(main())
+    return await websockets.serve(handler, "0.0.0.0", port)
