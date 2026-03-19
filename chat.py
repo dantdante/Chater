@@ -1,118 +1,126 @@
-import socket
-import threading
 import customtkinter as ctk
+import threading
+import websocket
+import time
+import certifi
 
-# ---- Default Server Info ----
-HOST = "127.0.0.1"
-PORT = 5555
-USERNAME = "User"
-
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-# ---- Networking ----
-def receive():
-    while True:
-        try:
-            msg = client.recv(1024).decode()
-            if msg.startswith("USERNAME"):
-                client.send(USERNAME.encode())
-            else:
-                chat_box.configure(state="normal")
-                chat_box.insert("end", msg + "\n")
-                chat_box.configure(state="disabled")
-                chat_box.yview("end")
-        except OSError:
-            break
-
-def send():
-    if client.fileno() == -1:
-        chat_box.configure(state="normal")
-        chat_box.insert("end", "[Error] Not connected to server.\n")
-        chat_box.configure(state="disabled")
-        return
-
-    msg = input_box.get()
-    if msg.strip() != "":
-        try:
-            client.send(f"{USERNAME}: {msg}".encode())
-            input_box.delete(0, "end")
-        except OSError:
-            chat_box.configure(state="normal")
-            chat_box.insert("end", "[Error] Failed to send message.\n")
-            chat_box.configure(state="disabled")
-
-def connect_to_server():
-    global HOST, PORT
-    HOST = server_ip_entry.get()
-    PORT = int(server_port_entry.get())
-    try:
-        client.connect((HOST, PORT))
-        threading.Thread(target=receive, daemon=True).start()
-        settings_window.destroy()
-        # Enable input after connecting
-        input_box.configure(state="normal")
-        send_button.configure(state="normal")
-        chat_box.configure(state="normal")
-        chat_box.insert("end", f"[Connected to {HOST}:{PORT} as {USERNAME}]\n")
-        chat_box.configure(state="disabled")
-    except Exception as e:
-        chat_box.configure(state="normal")
-        chat_box.insert("end", f"[Error] Could not connect: {e}\n")
-        chat_box.configure(state="disabled")
-
-# ---- GUI ----
-ctk.set_appearance_mode("dark")
+# -------------------------------
+# CONFIG
+# -------------------------------
+ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("dark-blue")
 
+RENDER_URL = "wss://chater-bfsl.onrender.com/ws"
+LOCAL_URL = "ws://127.0.0.1:5555"
+USERNAME = input("Enter your username: ")
+
+# -------------------------------
+# GLOBALS
+# -------------------------------
+ws = None
+connected = False
+current_url = None
+
+# -------------------------------
+# GUI SETUP
+# -------------------------------
 root = ctk.CTk()
-root.geometry("450x600")
-root.title("Chater v3")
+root.title("Chater 💬")
+root.geometry("450x550")
+root.resizable(False, False)
 
-# Chat display
-chat_box = ctk.CTkTextbox(root, width=420, height=500, corner_radius=10)
-chat_box.pack(pady=10)
-chat_box.configure(state="disabled")
+messages_frame = ctk.CTkFrame(root)
+messages_frame.pack(pady=10, padx=10, fill="both", expand=True)
 
-# Input + Send (disabled until connected)
-input_frame = ctk.CTkFrame(root, width=420, height=40, corner_radius=10)
-input_frame.pack(pady=(0,10))
+msg_list = ctk.CTkTextbox(messages_frame, width=400, height=400, corner_radius=10)
+msg_list.pack(padx=5, pady=5, fill="both", expand=True)
+msg_list.configure(state="disabled")
 
-input_box = ctk.CTkEntry(input_frame, width=320, placeholder_text="Type a message...")
-input_box.pack(side="left", padx=(10,5))
-input_box.configure(state="disabled")
+entry_field = ctk.CTkEntry(root, width=300, placeholder_text="Type your message...")
+entry_field.pack(side="left", padx=(10, 0), pady=(0, 10))
 
-send_button = ctk.CTkButton(input_frame, text="Send", width=80, command=send)
-send_button.pack(side="left", padx=5)
-send_button.configure(state="disabled")
+send_button = ctk.CTkButton(root, text="Send")
+send_button.pack(side="left", padx=(5, 10), pady=(0, 10))
 
-# Settings menu
+settings_button = ctk.CTkButton(root, text="Settings")
+settings_button.pack(side="bottom", pady=(0, 10))
+
+# -------------------------------
+# FUNCTIONS
+# -------------------------------
+def add_message(msg):
+    msg_list.configure(state="normal")
+    msg_list.insert("end", msg + "\n")
+    msg_list.see("end")
+    msg_list.configure(state="disabled")
+
+def connect_to_server(urls=(RENDER_URL, LOCAL_URL)):
+    global ws, connected, current_url
+    for url in urls:
+        try:
+            ws = websocket.WebSocket(sslopt={"cert_reqs": 2, "ca_certs": certifi.where()}) if url.startswith("wss") else websocket.WebSocket()
+            ws.connect(url)
+            ws.send(USERNAME)
+            connected = True
+            current_url = url
+            add_message(f"Connected to server: {url}")
+            threading.Thread(target=receive_messages, daemon=True).start()
+            return
+        except Exception as e:
+            add_message(f"Failed to connect to {url}: {e}")
+    connected = False
+    add_message("Could not connect to any server.")
+
+def receive_messages():
+    global ws, connected
+    while connected:
+        try:
+            msg = ws.recv()
+            if msg:
+                add_message(msg)
+        except:
+            connected = False
+            add_message("Disconnected. Reconnecting in 5s...")
+            time.sleep(5)
+            connect_to_server()
+            break
+
+def send_message():
+    global ws
+    msg = entry_field.get()
+    if msg and connected:
+        try:
+            ws.send(f"{USERNAME}: {msg}")
+            entry_field.delete(0, "end")
+        except:
+            add_message("Message failed. Reconnecting...")
+            connect_to_server()
+    else:
+        add_message("Not connected or message empty.")
+
 def open_settings():
-    global settings_window, server_ip_entry, server_port_entry, username_entry
-    settings_window = ctk.CTkToplevel(root)
-    settings_window.geometry("300x250")
-    settings_window.title("Settings")
+    global USERNAME, RENDER_URL, LOCAL_URL
+    url = ctk.simpledialog.askstring("Settings", "Render Server URL:", initialvalue=RENDER_URL)
+    local = ctk.simpledialog.askstring("Settings", "Local Server URL:", initialvalue=LOCAL_URL)
+    name = ctk.simpledialog.askstring("Settings", "Username:", initialvalue=USERNAME)
+    if url: RENDER_URL = url
+    if local: LOCAL_URL = local
+    if name: USERNAME = name
+    if connected:
+        ws.close()
+        global connected
+        connected = False
+    connect_to_server((RENDER_URL, LOCAL_URL))
 
-    ctk.CTkLabel(settings_window, text="Username:").pack(pady=(10,0))
-    username_entry = ctk.CTkEntry(settings_window)
-    username_entry.insert(0, USERNAME)
-    username_entry.pack(pady=5)
+# -------------------------------
+# BUTTON EVENTS
+# -------------------------------
+send_button.configure(command=send_message)
+entry_field.bind("<Return>", lambda event: send_message())
+settings_button.configure(command=open_settings)
 
-    ctk.CTkLabel(settings_window, text="Server IP:").pack(pady=(10,0))
-    server_ip_entry = ctk.CTkEntry(settings_window)
-    server_ip_entry.insert(0, HOST)
-    server_ip_entry.pack(pady=5)
-
-    ctk.CTkLabel(settings_window, text="Server Port:").pack(pady=(10,0))
-    server_port_entry = ctk.CTkEntry(settings_window)
-    server_port_entry.insert(0, str(PORT))
-    server_port_entry.pack(pady=5)
-
-    ctk.CTkButton(settings_window, text="Connect", command=lambda: [set_settings(), connect_to_server()]).pack(pady=15)
-
-def set_settings():
-    global USERNAME
-    USERNAME = username_entry.get()
-
-ctk.CTkButton(root, text="Settings", command=open_settings).pack()
-
+# -------------------------------
+# START CLIENT
+# -------------------------------
+connect_to_server((RENDER_URL, LOCAL_URL))
 root.mainloop()
