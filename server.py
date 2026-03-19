@@ -1,16 +1,14 @@
+# server.py
 import os
 import asyncio
 import websockets
 
-# store connected clients
 clients = set()
 
-async def handler(websocket):
-    # add client
+async def handler(websocket, path):
     clients.add(websocket)
     try:
         async for message in websocket:
-            # broadcast to everyone except sender
             for client in clients.copy():
                 if client != websocket:
                     try:
@@ -20,10 +18,12 @@ async def handler(websocket):
     finally:
         clients.remove(websocket)
 
-# pick port from Render or default to 5555
 port = int(os.environ.get("PORT", 5555))
-start_server = websockets.serve(handler, "0.0.0.0", port)
-
 print(f"Chater WebSocket Server running on port {port}")
-asyncio.get_event_loop().run_until_complete(start_server)
-asyncio.get_event_loop().run_forever()
+
+# use asyncio.run instead of get_event_loop()
+async def main():
+    async with websockets.serve(handler, "0.0.0.0", port):
+        await asyncio.Future()  # run forever
+
+asyncio.run(main())
