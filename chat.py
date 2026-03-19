@@ -58,7 +58,10 @@ def connect_to_server(urls=(RENDER_URL, LOCAL_URL)):
     global ws, connected, current_url
     for url in urls:
         try:
-            ws = websocket.WebSocket(sslopt={"cert_reqs": 2, "ca_certs": certifi.where()}) if url.startswith("wss") else websocket.WebSocket()
+            if url.startswith("wss"):
+                ws = websocket.WebSocket(sslopt={"cert_reqs": 2, "ca_certs": certifi.where()})
+            else:
+                ws = websocket.WebSocket()
             ws.connect(url)
             ws.send(USERNAME)
             connected = True
@@ -86,7 +89,7 @@ def receive_messages():
             break
 
 def send_message():
-    global ws
+    global ws, connected
     msg = entry_field.get()
     if msg and connected:
         try:
@@ -99,7 +102,7 @@ def send_message():
         add_message("Not connected or message empty.")
 
 def open_settings():
-    global USERNAME, RENDER_URL, LOCAL_URL
+    global USERNAME, RENDER_URL, LOCAL_URL, connected, ws
     url = ctk.simpledialog.askstring("Settings", "Render Server URL:", initialvalue=RENDER_URL)
     local = ctk.simpledialog.askstring("Settings", "Local Server URL:", initialvalue=LOCAL_URL)
     name = ctk.simpledialog.askstring("Settings", "Username:", initialvalue=USERNAME)
@@ -108,7 +111,6 @@ def open_settings():
     if name: USERNAME = name
     if connected:
         ws.close()
-        global connected
         connected = False
     connect_to_server((RENDER_URL, LOCAL_URL))
 
