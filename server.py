@@ -1,26 +1,31 @@
-# server.py
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import os
-import websockets
-import asyncio
 
-clients = set()
+app = FastAPI()
 
-async def handler(websocket, path):
-    clients.add(websocket)
+clients = []
+
+@app.get("/")
+def home():
+    return {"status": "chater server running 🔥"}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    clients.append(websocket)
+    print("client connected")
+
     try:
-        async for message in websocket:
-            for client in clients.copy():
-                if client != websocket:
-                    try:
-                        await client.send(message)
-                    except:
-                        clients.remove(client)
-    finally:
+        while True:
+            data = await websocket.receive_text()
+            print("message:", data)
+
+            for client in clients:
+                try:
+                    await client.send_text(data)
+                except:
+                    pass
+
+    except WebSocketDisconnect:
         clients.remove(websocket)
-
-port = int(os.environ.get("PORT", 5555))
-print(f"Chater WebSocket Server running on port {port}")
-
-# expose a "main" coroutine for uvicorn instead of asyncio.run()
-async def main():
-    return await websockets.serve(handler, "0.0.0.0", port)
+        print("client disconnected")
