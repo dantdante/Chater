@@ -1,31 +1,29 @@
 import os
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-import uvicorn
+import asyncio
+import websockets
 
-app = FastAPI()
+# store connected clients
 clients = set()
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
+async def handler(websocket):
+    # add client
     clients.add(websocket)
     try:
-        while True:
-            msg = await websocket.receive_text()
+        async for message in websocket:
             # broadcast to everyone except sender
             for client in clients.copy():
                 if client != websocket:
                     try:
-                        await client.send_text(msg)
+                        await client.send(message)
                     except:
                         clients.remove(client)
-    except WebSocketDisconnect:
+    finally:
         clients.remove(websocket)
 
-@app.get("/")
-async def root():
-    return {"status": "Chater WebSocket Server Running"}
+# pick port from Render or default to 5555
+port = int(os.environ.get("PORT", 5555))
+start_server = websockets.serve(handler, "0.0.0.0", port)
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5555))  # Render $PORT or local fallback
-    uvicorn.run("server:app", host="0.0.0.0", port=port, log_level="info")
+print(f"Chater WebSocket Server running on port {port}")
+asyncio.get_event_loop().run_until_complete(start_server)
+asyncio.get_event_loop().run_forever()
