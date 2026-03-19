@@ -63,7 +63,6 @@ def connect_to_server(urls=(RENDER_URL, LOCAL_URL)):
             else:
                 ws = websocket.WebSocket()
             ws.connect(url)
-            ws.send(USERNAME)
             connected = True
             current_url = url
             add_message(f"Connected to server: {url}")
@@ -81,11 +80,11 @@ def receive_messages():
             msg = ws.recv()
             if msg:
                 add_message(msg)
-        except:
+        except Exception as e:
             connected = False
-            add_message("Disconnected. Reconnecting in 5s...")
+            add_message(f"Disconnected. Reconnecting in 5s... ({e})")
             time.sleep(5)
-            connect_to_server()
+            connect_to_server((RENDER_URL, LOCAL_URL))
             break
 
 def send_message():
@@ -95,9 +94,12 @@ def send_message():
         try:
             ws.send(f"{USERNAME}: {msg}")
             entry_field.delete(0, "end")
-        except:
-            add_message("Message failed. Reconnecting...")
-            connect_to_server()
+        except Exception as e:
+            add_message(f"Message failed: {e}")
+            connected = False
+            try: ws.close()
+            except: pass
+            connect_to_server((RENDER_URL, LOCAL_URL))
     else:
         add_message("Not connected or message empty.")
 
@@ -110,7 +112,8 @@ def open_settings():
     if local: LOCAL_URL = local
     if name: USERNAME = name
     if connected:
-        ws.close()
+        try: ws.close()
+        except: pass
         connected = False
     connect_to_server((RENDER_URL, LOCAL_URL))
 
